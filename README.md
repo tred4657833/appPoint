@@ -40,6 +40,10 @@ Para generar un `.deb` y un `.AppImage` (ahí el sandbox ya viene bien configura
 
 ```bash
 npm run dist
+
+o
+
+rm -rf dist && npm run dist && cd dist && sudo apt install ./app-point_1.0.10_amd64.deb
 ```
 
 ## Qué es real aquí
