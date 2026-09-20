@@ -8,7 +8,7 @@ de oficina (Trello, Notion, etc.) más la suite de oficina instalada en tu siste
 ## Cómo ejecutarlo
 
 ```bash
-cd ubuntu-app-store
+cd appPoint
 npm install          # descarga Electron
 npm start
 ```
