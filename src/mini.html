@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self' data: https:; style-src 'unsafe-inline'; script-src 'self'">
+<title>appPoint</title>
+<style>
+  :root{
+    color-scheme:dark;
+    --bg:linear-gradient(200deg, #2a1030 0%, #17181c 55%); --bg-solid:#1c1b22;
+    --text:#f4f4f6; --sub:#8b8c96; --muted:#6c6d78; --card:#232429;
+    --ring:rgba(255,255,255,.09); --ov:rgba(255,255,255,.08); --ov-hover:rgba(255,255,255,.16);
+    --track:rgba(255,255,255,.09);
+    --ctl-bg:linear-gradient(200deg, #3a1a44 0%, #1f2026 60%); --ctl-fg:#fff; --ctl-ring:rgba(255,255,255,.16);
+    --danger:#ff5c6c; --error:#ff7a88;
+  }
+  :root[data-theme="light"]{
+    color-scheme:light;
+    --bg:linear-gradient(200deg, #e8dcf4 0%, #f1f2f7 55%); --bg-solid:#f1f2f7;
+    --text:#1c1d22; --sub:#565866; --muted:#8a8c99; --card:#e6e8ee;
+    --ring:rgba(0,0,0,.1); --ov:rgba(0,0,0,.07); --ov-hover:rgba(0,0,0,.12);
+    --track:rgba(0,0,0,.09);
+    --ctl-bg:linear-gradient(200deg, #ffffff 0%, #e4e7ee 100%); --ctl-fg:#2a2b33; --ctl-ring:rgba(0,0,0,.15);
+    --danger:#d6334a; --error:#c62838;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html, body{
+    width:100%; height:100%; overflow:hidden; user-select:none;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Ubuntu','Segoe UI',-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;
+  }
+  button{ font:inherit; color:inherit; background:none; border:0; cursor:pointer; -webkit-app-region:no-drag; }
+
+  .frame{
+    width:100%; height:100%; display:flex; flex-direction:column;
+    box-shadow:inset 0 0 0 1px var(--ring);
+    -webkit-app-region:drag; /* se puede arrastrar desde cualquier parte que no sea un botón */
+  }
+
+  .bar{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px 0 18px; height:44px; }
+  .head{ font-size:11.5px; color:var(--sub); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* Mismo botón redondo que los controles de la ventana principal */
+  .round{
+    flex:none; width:26px; height:26px; border-radius:50%; display:grid; place-items:center;
+    color:var(--ctl-fg); background:var(--ctl-bg);
+    box-shadow:inset 0 0 0 1px var(--ctl-ring), 0 3px 8px -3px rgba(0,0,0,.4);
+    transition:filter .15s ease, transform .15s ease;
+  }
+  .round svg{ width:13px; height:13px; display:block; pointer-events:none; }
+  .round:hover{ filter:brightness(1.3); transform:scale(1.08); }
+  .round:active{ transform:scale(.94); }
+
+  .body{ flex:1; min-height:0; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 24px; gap:0; }
+
+  .icon-wrap{ position:relative; width:84px; height:84px; margin-bottom:14px; }
+  .icon, .fallback{
+    width:100%; height:100%; border-radius:22%; display:block; object-fit:cover;
+    background:var(--card); box-shadow:0 14px 30px -8px rgba(0,0,0,.45);
+  }
+  .icon[hidden]{ display:none; }
+  .fallback{ display:none; place-items:center; font-size:38px; font-weight:700; color:#fff; }
+  body[data-phase="progress"] .icon-wrap{ animation:pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{ transform:scale(1); opacity:1; } 50%{ transform:scale(1.05); opacity:.88; } }
+
+  .badge{
+    position:absolute; right:-6px; bottom:-6px; width:26px; height:26px; border-radius:50%;
+    display:none; place-items:center; box-shadow:0 0 0 3px var(--bg-solid);
+  }
+  .badge svg{ width:14px; height:14px; display:block; }
+  body[data-phase="done"] .badge{ display:grid; background:#3ddc84; color:#0d2a18; }
+  body[data-phase="error"] .badge{ display:grid; background:#ff4d5e; color:#fff; }
+  .badge .ok, .badge .bad{ display:none; }
+  body[data-phase="done"] .badge .ok{ display:block; }
+  body[data-phase="error"] .badge .bad{ display:block; }
+
+  .name{ max-width:100%; font-size:14px; font-weight:600; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:5px; }
+  .stage{ max-width:100%; min-height:15px; font-size:11px; color:var(--sub); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:14px; }
+  body[data-phase="error"] .stage{ color:var(--error); }
+
+  .progress{ width:100%; }
+  body:not([data-phase="progress"]) .progress{ display:none; }
+  .track{ height:5px; background:var(--track); border-radius:6px; overflow:hidden; margin-bottom:7px; }
+  .fill{ height:100%; width:0%; background:linear-gradient(90deg,#3b82f6,#60a5fa); border-radius:6px; transition:width .35s ease; }
+  .fill.indeterminate{ width:35% !important; animation:slide 1.2s ease-in-out infinite; }
+  @keyframes slide{ 0%{ margin-left:-35%; } 100%{ margin-left:100%; } }
+  .meta{ display:flex; justify-content:space-between; gap:8px; font-size:10px; color:var(--muted); min-height:12px; }
+
+  .actions{ display:flex; gap:8px; padding:0 18px 18px; }
+  .btn{ flex:1; height:34px; border-radius:10px; font-size:11.5px; font-weight:600; background:var(--ov); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding:0 8px; }
+  .btn:hover{ background:var(--ov-hover); }
+  .btn.danger{ color:var(--danger); background:rgba(255,77,94,.12); }
+  .btn.danger:hover{ background:rgba(255,77,94,.22); }
+  .btn.primary{ background:#3b82f6; color:#fff; }
+  .btn.primary:hover{ background:#4f8ff7; }
+  .btn[hidden]{ display:none; }
+
+  @media (prefers-reduced-motion:reduce){ *{ animation:none !important; transition:none !important; } }
+</style>
+</head>
+<body data-phase="progress">
+  <div class="frame">
+    <div class="bar">
+      <span class="head" id="head"></span>
+      <button class="round" id="min" type="button" aria-label="Minimize">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg>
+      </button>
+    </div>
+
+    <div class="body">
+      <div class="icon-wrap">
+        <img class="icon" id="icon" alt="" hidden>
+        <div class="fallback" id="fallback"></div>
+        <div class="badge">
+          <svg class="ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+          <svg class="bad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" aria-hidden="true"><path d="M12 6v7M12 18h.01"/></svg>
+        </div>
+      </div>
+      <div class="name" id="name"></div>
+      <div class="stage" id="stage"></div>
+      <div class="progress">
+        <div class="track"><div class="fill" id="fill"></div></div>
+        <div class="meta"><span id="queue"></span><span id="pct"></span></div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn danger" id="primary" type="button"></button>
+      <button class="btn" id="show" type="button"></button>
+    </div>
+  </div>
+  <script src="mini.js"></script>
+</body>
+</html>

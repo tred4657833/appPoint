@@ -1,0 +1,41 @@
+{
+  "name": "app-point",
+  "version": "1.0.10",
+  "description": "Real app store and package manager for Ubuntu (Flatpak, Snap, APT and GNOME extensions)",
+  "main": "main.js",
+  "author": {
+    "name": "Yustin Rodríguez Navarro",
+    "email": "yustin.rodriguez@example.com"
+  },
+  "homepage": "https://github.com/yustinrn/ubuntu-app-store",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron . --no-sandbox",
+    "dev": "electron . --no-sandbox --enable-logging",
+    "dist": "electron-builder --linux deb AppImage"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "mx.udg.ubuntu.apppoint",
+    "productName": "appPoint",
+    "files": ["main.js", "preload.js", "mini-preload.js", "src/**"],
+    "extraResources": [
+      { "from": "build/icon.png", "to": "icon.png" }
+    ],
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "System",
+      "executableName": "app-point",
+      "maintainer": "Yustin Rodríguez Navarro <yustin.rodriguez@example.com>",
+      "desktop": {
+        "Name": "appPoint",
+        "Icon": "/opt/appPoint/resources/icon.png",
+        "StartupWMClass": "app-point"
+      },
+      "target": ["deb", "AppImage"]
+    }
+  }
+}
