@@ -142,10 +142,6 @@ input{font:inherit;}
 
 .owner-name{ font-size:13px; font-weight:600; flex-shrink:0; text-align:center; line-height:1.3; }
 .owner-sub{ font-size:10px; color:var(--sub); margin-top:2px; text-align:center; }
-.owner-battery{ display:flex; align-items:center; gap:5px; font-size:11px; color:var(--sub); margin-top:6px; flex-shrink:0; }
-.batt{ width:16px; height:9px; border:1px solid var(--sub); border-radius:2px; position:relative; padding:1px; }
-.batt::after{ content:""; position:absolute; right:-3px; top:2px; width:2px; height:4px; background:var(--sub); border-radius:1px; }
-.batt i{ display:block; height:100%; width:68%; background:var(--green); border-radius:1px; transition:width .6s ease; }
 
 .nav{ width:100%; margin-top:22px; display:flex; flex-direction:column; gap:2px; flex-shrink:0; }
 .nav-item{
@@ -639,11 +635,39 @@ input{font:inherit;}
 .app.skeleton{ cursor:default; pointer-events:none; }
 .sk-icon{ width:100%; max-width:56px; aspect-ratio:1/1; border-radius:24%; }
 .sk-line{ width:58%; height:8px; border-radius:4px; }
+.sk-line-sm{ width:38%; margin-top:5px; }
 .sk-icon, .sk-line{
   background:linear-gradient(90deg, var(--sk-a) 25%, var(--sk-b) 50%, var(--sk-a) 75%);
   background-size:200% 100%; animation:shimmer 1.3s linear infinite;
 }
 @keyframes shimmer{ from{ background-position:200% 0; } to{ background-position:-200% 0; } }
+
+/* Mismo placeholder, con la forma de una fila de "Top apps" (número + icono + 2 líneas). */
+.rank-item.skeleton{ cursor:default; pointer-events:none; }
+.rank-item.skeleton .sk-icon{ max-width:44px; border-radius:22%; }
+.rank-item.skeleton .rank-info{ flex:1; }
+
+/* Mismo placeholder, con la forma de una tarjeta del carrusel destacado (arte + pie). */
+.hero-card.skeleton{ cursor:default; pointer-events:none; }
+.hero-card.skeleton .hero-art{ background:var(--panel-2); }
+.hero-card.skeleton .hero-footer .sk-icon{ max-width:38px; border-radius:22%; }
+.hero-card.skeleton .hero-info{ flex:1; }
+.hero-card.skeleton .hero-price-wrap .sk-line{ width:52px; height:24px; border-radius:8px; margin:0; }
+
+/* Mismo placeholder, con la forma del banner de cadenas (título + botón). */
+.cb-slide.skeleton{ background:var(--panel-2); }
+.cb-slide.skeleton::before{ content:none; }
+.cb-slide.skeleton .cb-body{ display:flex; flex-direction:column; gap:14px; width:100%; max-width:340px; }
+.cb-slide.skeleton .sk-line-title{ width:70%; height:26px; border-radius:6px; }
+.cb-slide.skeleton .sk-pill{ width:120px; height:36px; border-radius:10px; }
+.cb-slide.skeleton .sk-line-title, .cb-slide.skeleton .sk-pill{
+  background:linear-gradient(90deg, var(--sk-a) 25%, var(--sk-b) 50%, var(--sk-a) 75%);
+  background-size:200% 100%; animation:shimmer 1.3s linear infinite;
+}
+@media (max-width:760px){
+  .cb-slide.skeleton .sk-line-title{ height:16px; }
+  .cb-slide.skeleton .sk-pill{ width:96px; height:30px; }
+}
 
 .toast{
   position:fixed; bottom:24px; left:50%; transform:translateX(-50%);

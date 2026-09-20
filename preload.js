@@ -41,6 +41,11 @@ contextBridge.exposeInMainWorld('sys', {
 
   // Estado de la instalación para la mini ventana que aparece con la app minimizada o en segundo plano.
   miniUpdate: (data) => ipcRenderer.send('mini:update', data),
+  // Avisa al proceso principal si hay algo instalándose o en cola: mientras
+  // sea true, cerrar la ventana no corta la descarga (se sigue en segundo
+  // plano) y se desactiva el ahorro de batería del renderer para que el
+  // progreso avance de verdad.
+  setQueueActive: (active) => ipcRenderer.send('queue:state', { active }),
 
   onProgress: (cb) => {
     const listener = (_e, data) => cb(data);

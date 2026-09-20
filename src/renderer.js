@@ -520,6 +520,65 @@ function showSkeleton(container, n = 18) {
   }
 }
 
+// Mismo placeholder animado que showSkeleton(), pero con la forma de una
+// fila de ranking (número + icono + dos líneas) para el carrusel "Top apps".
+function showRankSkeleton(container, n = 9) {
+  container.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const row = el('div', 'rank-item skeleton');
+    row.append(el('span', 'rank-num'));
+    const wrap = el('div', 'icon-wrap');
+    wrap.append(el('div', 'sk-icon'));
+    row.append(wrap);
+    const info = el('div', 'rank-info');
+    info.append(el('div', 'sk-line'));
+    info.append(el('div', 'sk-line sk-line-sm'));
+    row.append(info);
+    container.append(row);
+  }
+}
+
+// Mismo placeholder animado que showSkeleton(), pero con la forma de una tarjeta
+// del carrusel destacado (arte grande + icono/nombre/precio abajo), para que
+// "hero-carousel" no se quede vacío mientras se arma el primer lote del feed.
+function showHeroSkeleton(container, n = SECTION_SIZES.hero) {
+  container.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const card = el('div', 'hero-card skeleton');
+    card.append(el('div', 'hero-art'));
+    const footer = el('div', 'hero-footer');
+    footer.append(el('div', 'sk-icon'));
+    const info = el('div', 'hero-info');
+    info.append(el('div', 'sk-line'), el('div', 'sk-line sk-line-sm'));
+    footer.append(info);
+    const priceWrap = el('div', 'hero-price-wrap');
+    priceWrap.append(el('div', 'sk-line'));
+    footer.append(priceWrap);
+    card.append(footer);
+    container.append(card);
+  }
+}
+
+// Mismo placeholder, con la forma de una diapositiva del banner de cadenas
+// (título + botón), para no dejarlo oculto/en blanco mientras llega imbanner.json.
+function showBannerSkeleton() {
+  const wrap = $('channel-banner-wrap');
+  const track = $('channel-banner');
+  const dots = $('channel-banner-dots');
+  if (!wrap || !track) return;
+  track.innerHTML = '';
+  if (dots) dots.innerHTML = '';
+  const slide = el('div', 'cb-slide active skeleton');
+  const body = el('div', 'cb-body');
+  body.append(el('div', 'sk-line-title'));
+  const actions = el('div', 'cb-actions');
+  actions.append(el('div', 'sk-pill'));
+  body.append(actions);
+  slide.append(body);
+  track.append(slide);
+  wrap.classList.remove('hidden');
+}
+
 const norm = (v) => String(v || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
 
 function localizeWeb(w) {
@@ -624,11 +683,6 @@ async function tickStats() {
       $('disk-pct').textContent = `${s.disk.percent}%`;
       $('disk-bar').style.width = `${s.disk.percent}%`;
     }
-    $('batt-fill').style.width = `${s.battery.percent}%`;
-    $('batt-fill').style.background = s.battery.percent < 20 ? 'var(--red)' : 'var(--green)';
-    $('batt-text').textContent = s.battery.present
-      ? `${s.battery.percent}% · ${batteryStatusLabel(s.battery.status)}`
-      : t('battery.AC');
 
     if (state.device) {
       state.device.uptime = s.uptime;
@@ -830,13 +884,19 @@ async function loadCatalog(query = '') {
   if (!query) {
     state.feed = { items: [], cursor: null, loading: false, exhausted: false };
     state.usedSectionKeys = new Set();
-    $('featured-row').innerHTML = '';
-    $('top-rank-row').innerHTML = '';
-    $('experts-row').innerHTML = '';
-    $('hero-carousel').innerHTML = '';
-    $('hero-carousel-wrap').classList.remove('hidden');
     $('grid-title').textContent = t('store.allCatalog');
     showSkeleton(grid, 24);
+    // Mismo placeholder animado que el resto de la tienda para el banner, el
+    // carrusel destacado, el ranking y las dos filas: antes se quedaban en
+    // blanco (sin nada, vaciado simple con innerHTML='') hasta que llegaba el
+    // primer lote real, lo que se sentía como que la app se había quedado
+    // colgada un momento.
+    if (!cbState.loaded) showBannerSkeleton();
+    $('hero-carousel-wrap').classList.remove('hidden');
+    showHeroSkeleton($('hero-carousel'), SECTION_SIZES.hero);
+    showRankSkeleton($('top-rank-row'), SECTION_SIZES.top);
+    showSkeleton($('featured-row'), 8);
+    showSkeleton($('experts-row'), 8);
     loadPopularWeb();
     await loadFeedBatch(FEED_INITIAL_POOL); // primera sección (con apps de sobra para los carruseles); el resto llega al hacer scroll
     return;
@@ -1023,6 +1083,13 @@ function renderFeedIncrement(freshItems) {
   $('grid-title').textContent = t('store.allCatalog');
 
   const keyOf = (item) => `${item.source}:${item.id}`;
+
+  // Quita los placeholders animados apenas hay datos reales que mostrar en
+  // su lugar (si no se hace esto, estos contenedores ya no cuentan como
+  // "vacíos" para el chequeo de más abajo, porque nacen con el skeleton).
+  featured.querySelectorAll('.skeleton').forEach((n) => n.remove());
+  topRank.querySelectorAll('.skeleton').forEach((n) => n.remove());
+  experts.querySelectorAll('.skeleton').forEach((n) => n.remove());
 
   // La primera vez repartimos un lote inicial, al azar y sin repetir, entre
   // las secciones destacadas: ranking numerado, recomendadas, selección de
@@ -1291,6 +1358,14 @@ function queueLabel() {
   return state.queue.length ? t('download.queued', { n: state.queue.length }) : '';
 }
 
+// Le dice al proceso principal si hay algo instalándose o en cola. Así,
+// cerrar la ventana mientras esto es true solo la oculta (la descarga sigue
+// en segundo plano); en cuanto vuelve a false, si el usuario ya había
+// pedido cerrar, la app se cierra de verdad.
+function syncBackgroundState() {
+  try { window.sys.setQueueActive(!!(state.current || state.queue.length)); } catch { /* opcional */ }
+}
+
 function showDownloadPanel(item) {
   const panel = $('download-panel');
   const head = item.source === 'gnome-extension' ? t('download.installingExtension') : item.source === 'webapp' ? t('download.creatingShortcut') : t('download.downloading');
@@ -1353,14 +1428,16 @@ function startInstall(item) {
   if (state.queue.some((q) => `${q.source}:${q.id}` === `${item.source}:${item.id}`)) return;
   state.queue.push(item);
   updateQueueLabel();
+  syncBackgroundState();
   if (!state.current) runQueue();
 }
 
 async function runQueue() {
   const item = state.queue.shift();
-  if (!item) { state.current = null; hideDownloadPanel(); return; }
+  if (!item) { state.current = null; hideDownloadPanel(); syncBackgroundState(); return; }
   state.current = { ...item, key: `${item.source}:${item.id}` };
   showDownloadPanel(item);
+  syncBackgroundState();
 
   let result;
   try {
@@ -1781,7 +1858,7 @@ const CB_FALLBACK_GRADIENTS = [
   'linear-gradient(120deg,#4776e6,#8e54e9)'
 ];
 
-const cbState = { items: [], index: 0, timer: null };
+const cbState = { items: [], index: 0, timer: null, loaded: false };
 
 function cbOpen(url) {
   if (!url) return;
@@ -1860,6 +1937,8 @@ async function loadChannelBanner() {
   } catch (err) {
     console.error('channel banner fetch failed', err);
     $('channel-banner-wrap') && $('channel-banner-wrap').classList.add('hidden');
+  } finally {
+    cbState.loaded = true;
   }
 }
 
@@ -1874,7 +1953,13 @@ async function init() {
   document.querySelectorAll('.lang-btn').forEach((b) => b.classList.toggle('active', b.dataset.lang === state.lang));
 
   await tickStats();
-  setInterval(tickStats, 3000);
+  // Con la ventana minimizada/oculta y sin nada instalándose no hay nada que
+  // mostrar, así que dejamos de leer CPU/RAM/batería del sistema en vez de
+  // seguir haciéndolo cada 3s para siempre (era la principal fuga de
+  // batería/CPU en segundo plano). En cuanto vuelve a estar visible se
+  // refresca al instante.
+  setInterval(() => { if (document.visibilityState === 'visible') tickStats(); }, 3000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tickStats(); });
 
   await loadDevice();
   state.backends = unwrap(await window.sys.backends());

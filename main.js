@@ -7,7 +7,7 @@
  *  - instalación: flatpak (--user), snap (pkexec), apt-get (pkexec), gnome-extensions
  */
 
-const { app, BrowserWindow, ipcMain, shell, dialog, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, screen, Tray, Menu } = require('electron');
 
 // Muchas distros basadas en Ubuntu (incl. LikuOS) restringen los user
 // namespaces sin privilegios vía AppArmor, lo que bloquea el sandbox de
@@ -23,13 +23,7 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (win && !win.isDestroyed()) {
-      if (win.isMinimized()) win.restore();
-      win.show();
-      win.focus();
-    }
-  });
+  app.on('second-instance', () => showMainWindow());
 }
 
 const os = require('os');
@@ -42,10 +36,20 @@ const { spawn, execFile } = require('child_process');
 
 let win = null;
 let splash = null;
+let tray = null;
 const jobs = new Map(); // id -> ChildProcess
 const httpCache = new Map(); // acelera catálogo/iconos repetidos
 const previewWindows = new Set();
 const snapCategoryCache = new Map(); // categoría snap -> apps[] (para el feed infinito)
+
+// El renderer avisa aquí si hay una instalación en curso o apps en cola.
+// Mientras esto sea true: (1) cerrar la ventana solo la oculta (no mata los
+// jobs ni cierra la app) y (2) el throttling de segundo plano se desactiva
+// para que la barra de progreso y la mini ventana sigan avanzando de verdad.
+let installActive = false;
+// El usuario pidió cerrar mientras algo se instalaba: en cuanto termine la
+// cola, cerramos la app de verdad en vez de dejarla viva sin ventana.
+let quitRequested = false;
 
 /* ─────────────────────────── utilidades ─────────────────────────── */
 
@@ -1254,6 +1258,32 @@ ipcMain.on('window:close', () => {
   if (win && !win.isDestroyed()) win.close();
 });
 
+// El renderer manda esto cada vez que cambia su cola de instalación
+// (arranca algo, termina, cancela...). Con eso decidimos si cerrar debe
+// seguir instalando en segundo plano y si toca reactivar el throttling.
+function setInstallActive(active) {
+  active = !!active;
+  if (active === installActive) return;
+  installActive = active;
+  if (win && !win.isDestroyed()) win.webContents.setBackgroundThrottling(!active);
+  // Si no queda ningún aviso de "listo"/"falló" pendiente de mostrarse en la
+  // mini ventana, no hay nada que esperar: cerramos ya. Si sí lo hay, el
+  // propio temporizador de la mini ventana (miniResultTimer) se encarga de
+  // cerrar cuando ese aviso termine de mostrarse.
+  if (!active && miniData.phase !== 'progress') maybeQuitAfterQueue();
+}
+
+function maybeQuitAfterQueue() {
+  if (!quitRequested || installActive) return;
+  quitRequested = false;
+  app.isQuitting = true;
+  app.quit();
+}
+ipcMain.on('queue:state', (e, payload) => {
+  if (!win || win.isDestroyed() || e.sender !== win.webContents) return;
+  setInstallActive(payload && payload.active);
+});
+
 /* ─────────────────────────── mini ventana de instalación ─────────────────────────── */
 // Mientras se instala algo y el usuario minimiza appPoint o se va a otra app, aparece una mini
 // ventana (mismo estilo que la pantalla de carga) con el progreso. Al volver a appPoint se cierra sola.
@@ -1370,7 +1400,7 @@ ipcMain.on('mini:update', (e, data) => {
   miniData = sanitizeMini(data);
   clearTimeout(miniResultTimer);
   if (miniData.phase === 'done' || miniData.phase === 'error') {
-    miniResultTimer = setTimeout(() => { miniData = { phase: 'idle' }; syncMini(); }, MINI_RESULT_MS);
+    miniResultTimer = setTimeout(() => { miniData = { phase: 'idle' }; syncMini(); maybeQuitAfterQueue(); }, MINI_RESULT_MS);
   }
   syncMini();
 });
@@ -1379,12 +1409,7 @@ ipcMain.on('mini:update', (e, data) => {
 const fromMini = (e) => mini && !mini.isDestroyed() && e.sender === mini.webContents;
 ipcMain.on('mini:ready', (e) => { if (fromMini(e)) pushMini(); });
 ipcMain.on('mini:minimize', (e) => { if (fromMini(e)) mini.minimize(); });
-ipcMain.on('mini:show-main', (e) => {
-  if (!fromMini(e) || !win || win.isDestroyed()) return;
-  if (win.isMinimized()) win.restore();
-  win.show();
-  win.focus();
-});
+ipcMain.on('mini:show-main', (e) => { if (fromMini(e)) showMainWindow(); });
 ipcMain.on('mini:cancel', (e) => {
   if (!fromMini(e) || miniData.phase !== 'progress' || !miniData.key) return;
   cancelJob(miniData.key);
@@ -1438,19 +1463,38 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
-      backgroundThrottling: false // que el progreso siga fluyendo con la ventana minimizada
+      sandbox: false
+      // backgroundThrottling se deja en su valor normal (true) y solo se
+      // desactiva puntualmente mientras hay una instalación en curso (ver
+      // setInstallActive): así el reloj/CPU/RAM/batería y demás timers del
+      // renderer se frenan de verdad cuando la app está minimizada sin
+      // hacer nada, en vez de seguir despiertos 24/7 gastando batería.
     }
   });
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
   for (const ev of ['minimize', 'restore', 'show', 'hide', 'focus', 'blur']) win.on(ev, scheduleMiniSync);
-  win.on('closed', () => { clearTimeout(miniSyncTimer); clearTimeout(miniResultTimer); destroyMini(); });
-  // La pantalla de carga se ve como mínimo 3s: si la ventana principal está
-  // lista antes, esperamos; si tarda más, la mostramos apenas esté lista.
+  // Cerrar (la X, Alt+F4, etc.) NO debe matar descargas en curso: si hay algo
+  // instalándose o en cola, solo ocultamos la ventana y seguimos en segundo
+  // plano (con la mini ventana visible); la app se cierra de verdad cuando
+  // la cola termine. El tray permite reabrirla o salir del todo en cualquier momento.
+  win.on('close', (e) => {
+    if (app.isQuitting) return;
+    if (installActive || jobs.size > 0) {
+      e.preventDefault();
+      quitRequested = true;
+      win.hide();
+      scheduleMiniSync();
+    }
+  });
+  win.on('closed', () => { clearTimeout(miniSyncTimer); clearTimeout(miniResultTimer); destroyMini(); win = null; });
+  // La pantalla de carga solo evita el parpadeo del arranque: un mínimo corto,
+  // nunca una espera artificial (antes forzaba 3s completos aunque la app ya
+  // estuviera lista, lo cual la hacía sentir lenta sin necesidad).
   const splashStart = Date.now();
+  const MIN_SPLASH_MS = 350;
   win.once('ready-to-show', () => {
     const elapsed = Date.now() - splashStart;
-    const wait = Math.max(0, 3000 - elapsed);
+    const wait = Math.max(0, MIN_SPLASH_MS - elapsed);
     setTimeout(() => {
       if (splash && !splash.isDestroyed()) splash.destroy();
       splash = null;
@@ -1460,14 +1504,41 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
 }
 
+// Reabre/enfoca la ventana principal, la reconstruye si ya se había cerrado
+// del todo (no se recrea nunca mientras hay una instalación en segundo
+// plano: en ese caso solo estaba oculta).
+function showMainWindow() {
+  if (!win || win.isDestroyed()) { createWindow(); return; }
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function createTray() {
+  tray = new Tray(path.join(__dirname, 'src', 'icon.png'));
+  tray.setToolTip('appPoint');
+  tray.on('click', () => showMainWindow());
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Abrir appPoint', click: () => showMainWindow() },
+    { type: 'separator' },
+    { label: 'Salir', click: () => { app.isQuitting = true; app.quit(); } }
+  ]));
+}
+
 app.whenReady().then(() => {
   createSplash();
   createWindow();
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  createTray();
+  app.on('activate', () => showMainWindow());
 });
 
 app.on('window-all-closed', () => {
+  // Si llegamos aquí es porque de verdad no queda nada instalándose (el
+  // handler 'close' de la ventana ya se encarga de ocultar en vez de
+  // cerrar mientras haya jobs o cola activos), así que es seguro limpiar
+  // y salir.
   for (const [, child] of jobs) { try { child.kill('SIGTERM'); } catch { /* ya terminó */ } }
   for (const pw of previewWindows) { try { pw.close(); } catch { /* ya cerrada */ } }
+  if (tray) { tray.destroy(); tray = null; }
   app.quit();
 });

@@ -8,43 +8,40 @@ de oficina (Trello, Notion, etc.) más la suite de oficina instalada en tu siste
 ## Cómo ejecutarlo
 
 ```bash
-cd appPoint
-npm install          # descarga Electron
+cd ubuntu-app-store
+npm install          # descarga Electron (única dependencia, y solo de desarrollo)
 npm start
 ```
 
-### Si ves el error del sandbox de Chromium
+No hace falta tocar permisos de `node_modules` ni hacer `chown root:root` a nada:
+el sandbox de Chromium se deshabilita ya en el propio código (`app.commandLine.appendSwitch('no-sandbox')`
+en `main.js`) y además el script `start` ya arranca con `--no-sandbox`. Esto es a propósito, porque
+varias distros basadas en Ubuntu restringen los user namespaces sin privilegios vía AppArmor y eso
+rompe el sandbox por defecto de Electron en cualquier instalación nueva.
 
-```
-FATAL setuid_sandbox_host.cc(158) ... chrome-sandbox ... owned by root and has mode 4755
-```
-
-Ocurre porque Electron necesita que su binario de sandbox sea de root. Dos salidas:
-
-```bash
-# opción A: arreglar permisos (hay que repetirlo tras cada npm install)
-sudo chown root:root node_modules/electron/dist/chrome-sandbox
-sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
-npm start
-
-# opción B: arrancar sin sandbox (más simple en desarrollo)
-npx electron . --no-sandbox
-```
-
-Para dejar la opción B fija, cambia en `package.json`:
-```json
-"scripts": { "start": "electron . --no-sandbox" }
-```
-
-Para generar un `.deb` y un `.AppImage` (ahí el sandbox ya viene bien configurado):
+Para generar un `.deb` y un `.AppImage`:
 
 ```bash
 npm run dist
-
-o
-
-rm -rf dist && npm run dist && cd dist && sudo apt install ./app-point_1.0.10_amd64.deb
 ```
+
+## Nota para quien empaquete esto (Flathub, PPA, revisión de una distro, etc.)
+
+- `package.json` no declara **ninguna dependencia de producción**: `main.js`, `preload.js` y el
+  renderer solo usan módulos nativos de Node (`fs`, `path`, `https`, `child_process`…) y las APIs de
+  Electron. `electron` y `electron-builder` están en `devDependencies` porque son herramientas de
+  compilación, no código que se ejecute dentro de la app empaquetada.
+- Por eso el `.deb`/`AppImage` generado con `npm run dist` **no lleva ninguna carpeta `node_modules`
+  dentro**: lo único "vendorizado" es el runtime de Electron en sí, que `electron-builder` empaqueta
+  como parte del binario final. Eso es la práctica estándar para cualquier app de Electron distribuida
+  como `.deb`/AppImage/Snap/Flatpak de terceros, y es independiente de cualquier permiso de
+  `node_modules` en el checkout de desarrollo (esos `node_modules` nunca se copian al paquete final;
+  mira `build.files` en `package.json`).
+- Dicho eso: si el objetivo es entrar al **archivo oficial** de una distro (Debian/Ubuntu "main"), la
+  política de esas distros en general no acepta binarios de terceros vendorizados como el runtime de
+  Electron, venga o no acompañado de `node_modules`. Eso no se arregla con configuración de empaquetado;
+  requeriría portar la app a un runtime provisto por el sistema (p. ej. WebKitGTK/GJS o Python+GTK), lo
+  cual es un cambio de arquitectura, no un ajuste de este repo.
 
 ## Qué es real aquí
 
@@ -78,6 +75,14 @@ rm -rf dist && npm run dist && cd dist && sudo apt install ./app-point_1.0.10_am
   progreso real, *Cancelar* y *Ver appPoint*. Al volver a appPoint se cierra sola. Si estorba, el botón redondo
   de arriba la minimiza (queda en la barra de tareas) y no vuelve a molestar hasta la próxima vez que salgas de
   la app; cuando la instalación termina o falla se restaura sola un momento para avisarte.
+- **Cerrar la ventana (la X) con algo instalándose o en cola**: no corta la descarga. La ventana solo se
+  oculta, la mini ventana de progreso sigue apareciendo y appPoint queda con un icono en la bandeja del
+  sistema (clic para reabrir, o *Salir* para cerrar de verdad y cancelar lo pendiente). En cuanto termina
+  todo lo que había en cola, y ya se mostró el aviso de "listo"/"falló", la app se cierra sola.
+- **Uso de batería en segundo plano**: fuera de una instalación activa, appPoint deja que Chromium frene
+  sus propios temporizadores cuando la ventana está minimizada u oculta (ya no se fuerza a mantenerlos
+  despiertos), y el reloj de sistema (CPU/RAM/disco/batería) deja de refrescarse cada 3 s mientras no hay
+  nada visible. Vuelve a la normalidad en cuanto la ventana se muestra otra vez.
 - **Configuración → Apariencia**: modo **Oscuro** (predeterminado) o **Claro**, y la barra lateral a la
   **Izquierda** (predeterminado) o a la **Derecha**. Los cambios se aplican al instante y se guardan
   (`localStorage`, igual que el idioma), así que se conservan al cerrar y abrir la app. La mini ventana de
